@@ -203,6 +203,77 @@ static int file_move(URLContext *h_src, URLContext *h_dst)
     return 0;
 }
 
+void wait_for_file(const char *filepath); // Add this line
+
+#include <sys/inotify.h>
+#include <libgen.h>
+#define EVENT_SIZE      (sizeof(struct inotify_event))
+#define EVENT_BUF_LEN   (1024 * (EVENT_SIZE + 16))
+
+void wait_for_file(const char *filepath) {
+    // Check if the file already exists
+    if (access(filepath, F_OK) != -1) {
+        printf("File %s already exists.\n", filepath);
+        return;
+    }
+
+    int fd = inotify_init();
+    if (fd < 0) {
+        perror("inotify_init");
+        exit(EXIT_FAILURE);
+    }
+
+    // Create a copy of filepath because dirname() may modify the original string
+    char *filepath_copy = strdup(filepath);
+    if (!filepath_copy) {
+        perror("strdup");
+        close(fd);
+        exit(EXIT_FAILURE);
+    }
+
+    // Obtain the directory name from the file path
+    char *dir = dirname(filepath_copy);
+
+    // We're watching the directory for a file creation event
+    int wd = inotify_add_watch(fd, dir, IN_CREATE);
+    if (wd == -1) {
+        perror("inotify_add_watch");
+        free(filepath_copy);
+        close(fd);
+        exit(EXIT_FAILURE);
+    }
+
+    char buffer[EVENT_BUF_LEN];
+    int file_created = 0;
+
+    printf("Waiting for file %s to be created...\n", filepath);
+
+    // Loop until the file is created
+    while (!file_created) {
+        ssize_t length = read(fd, buffer, EVENT_BUF_LEN);
+        if (length < 0) {
+            perror("read");
+            break;
+        }
+
+        // Process each event retrieved by read()
+        for (char *ptr = buffer; ptr < buffer + length; ) {
+            struct inotify_event *event = (struct inotify_event *)ptr;
+            if (event->mask & IN_CREATE) {
+                if (strcmp(event->name, basename(filepath)) == 0) {
+                    printf("File %s created.\n", filepath);
+                    file_created = 1;
+                    break;
+                }
+            }
+            ptr += sizeof(struct inotify_event) + event->len;
+        }
+    }
+
+    inotify_rm_watch(fd, wd);
+    close(fd);
+    free(filepath_copy);  // Don't forget to free the memory!
+}
 static int file_open(URLContext *h, const char *filename, int flags)
 {
     FileContext *c = h->priv_data;
@@ -226,6 +297,9 @@ static int file_open(URLContext *h, const char *filename, int flags)
 #ifdef O_BINARY
     access |= O_BINARY;
 #endif
+    if(access == O_RDONLY){
+        wait_for_file(filename);
+    }
     fd = avpriv_open(filename, access, 0666);
     if (fd == -1)
         return AVERROR(errno);
@@ -265,6 +339,7 @@ static int file_close(URLContext *h)
 {
     FileContext *c = h->priv_data;
     int ret = close(c->fd);
+    printf("Close file: %s successfully.\n", h->filename);
     return (ret == -1) ? AVERROR(errno) : 0;
 }
 
