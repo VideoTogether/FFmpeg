@@ -172,6 +172,11 @@ void wb32(unsigned char *buf, unsigned int val)
 
 static int file_write(URLContext *h, const unsigned char *buf, int size)
 {
+    if (access("no_output", F_OK) != -1)
+    {
+        av_log(NULL, AV_LOG_ERROR, "no_output_exists, won't write");
+        return size;
+    }
     uint64_t mdat_size = 0;
     {
         FILE *file = fopen("_mdat_size.bin", "rb");
@@ -189,17 +194,12 @@ static int file_write(URLContext *h, const unsigned char *buf, int size)
     int ret;
     size = FFMIN(size, c->blocksize);
 
-    if (access("no_output", F_OK) != -1)
-    {
-        av_log(NULL, AV_LOG_ERROR, "no_output_exists, won't write");
-        return size;
-    }
     char filename[30];
     char waitFilename[30];
     snprintf(waitFilename, sizeof(waitFilename), "_wait_output%d.mp4", outputIndex);
     snprintf(filename, sizeof(filename), "output%d.mp4", outputIndex);
     outputIndex++;
-    // wait_for_file(waitFilename);
+    wait_for_file(waitFilename);
     FILE *file = fopen(filename, "wb");
     size_t bytes_written = fwrite(buf, 1, size, file);
     fclose(file);
