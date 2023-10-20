@@ -7530,19 +7530,22 @@ static int mov_write_trailer(AVFormatContext *s)
 
     if (!(mov->flags & FF_MOV_FLAG_FRAGMENT)) {
         moov_pos = avio_tell(pb);
-
+        FILE* file = fopen("_mdat_size.bin", "wb");
+        fwrite(&mov->mdat_size, sizeof(uint64_t), 1, file);
+        fclose(file);
+        av_log(NULL, AV_LOG_ERROR, "mov->mdat_size: %"PRIu64" ;\n", mov->mdat_size);
         /* Write size of mdat tag */
         if (mov->mdat_size + 8 <= UINT32_MAX) {
             avio_seek(pb, mov->mdat_pos, SEEK_SET);
-            avio_wb32(pb, mov->mdat_size + 8);
+            // avio_wb32(pb, mov->mdat_size + 8);
         } else {
             /* overwrite 'wide' placeholder atom */
             avio_seek(pb, mov->mdat_pos - 8, SEEK_SET);
             /* special value: real atom size will be 64 bit value after
              * tag field */
-            avio_wb32(pb, 1);
-            ffio_wfourcc(pb, "mdat");
-            avio_wb64(pb, mov->mdat_size + 16);
+            // avio_wb32(pb, 1);
+            // ffio_wfourcc(pb, "mdat");
+            // avio_wb64(pb, mov->mdat_size + 16);
         }
         avio_seek(pb, mov->reserved_moov_size > 0 ? mov->reserved_header_pos : moov_pos, SEEK_SET);
 

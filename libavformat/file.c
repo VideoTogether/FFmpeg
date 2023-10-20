@@ -121,12 +121,93 @@ static int file_read(URLContext *h, unsigned char *buf, int size)
     return (ret == -1) ? AVERROR(errno) : ret;
 }
 
+
+void wait_for_file(const char *filepath); // Add this line
+
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#endif
+
+void wait_for_file(const char *filepath) {
+    // Check if the file already exists
+    if (access(filepath, F_OK) != -1)
+    {
+        av_log(NULL, AV_LOG_ERROR, "File %s already exists.\n", filepath);
+        return;
+    }
+
+    av_log(NULL, AV_LOG_ERROR, "Waiting for file %s to be created...\n", filepath);
+
+    while (1)
+    {
+        if (access(filepath, F_OK) != -1)
+        {
+            av_log(NULL, AV_LOG_ERROR, "File %s created.\n", filepath);
+            break;
+        }
+
+#ifdef __EMSCRIPTEN__
+        emscripten_sleep(25);
+#else
+        sleep(1);
+#endif
+    }
+}
+
+int outputIndex = 0;
+void wb8(unsigned char *buf, unsigned char val);
+void wb32(unsigned char *buf, unsigned int val);
+void wb8(unsigned char *buf, unsigned char val)
+{
+    (*buf) = val;
+}
+
+void wb32(unsigned char *buf, unsigned int val)
+{
+    wb8(buf,           val >> 24 );
+    wb8(buf+1, (uint8_t)(val >> 16));
+    wb8(buf+2, (uint8_t)(val >> 8 ));
+    wb8(buf+3, (uint8_t) val       );
+}
+
 static int file_write(URLContext *h, const unsigned char *buf, int size)
 {
+    uint64_t mdat_size = 0;
+    {
+        FILE *file = fopen("_mdat_size.bin", "rb");
+        fread(&mdat_size, sizeof(uint64_t), 1, file);
+        fclose(file);
+    }
+    if (outputIndex == 0)
+    {
+        // TODO bigger than int_max
+        *(unsigned int *)(buf + 40) = (unsigned int)mdat_size;
+        wb32(buf + 40, mdat_size + 8);
+    }
+
     FileContext *c = h->priv_data;
     int ret;
     size = FFMIN(size, c->blocksize);
-    ret = write(c->fd, buf, size);
+
+    if (access("no_output", F_OK) != -1)
+    {
+        av_log(NULL, AV_LOG_ERROR, "no_output_exists, won't write");
+        return size;
+    }
+    char filename[30];
+    char waitFilename[30];
+    snprintf(waitFilename, sizeof(waitFilename), "_wait_output%d.mp4", outputIndex);
+    snprintf(filename, sizeof(filename), "output%d.mp4", outputIndex);
+    outputIndex++;
+    // wait_for_file(waitFilename);
+    FILE *file = fopen(filename, "wb");
+    size_t bytes_written = fwrite(buf, 1, size, file);
+    fclose(file);
+    av_log(NULL, AV_LOG_ERROR, "Write chunk output file: %s;\n", filename);
+
+
+    // ret = write(c->fd, buf, size);
+    ret = size;
     return (ret == -1) ? AVERROR(errno) : ret;
 }
 
@@ -201,35 +282,6 @@ static int file_move(URLContext *h_src, URLContext *h_dst)
         return AVERROR(errno);
 
     return 0;
-}
-
-void wait_for_file(const char *filepath); // Add this line
-
-#ifdef __EMSCRIPTEN__
-#include <emscripten.h>
-#endif
-
-void wait_for_file(const char *filepath) {
-    // Check if the file already exists
-    if (access(filepath, F_OK) != -1) {
-        printf("File %s already exists.\n", filepath);
-        return;
-    }
-
-    printf("Waiting for file %s to be created...\n", filepath);
-
-    while (1) {
-        if (access(filepath, F_OK) != -1) {
-            printf("File %s created.\n", filepath);
-            break;
-        }
-
-#ifdef __EMSCRIPTEN__
-        emscripten_sleep(25);
-#else
-        sleep(1);
-#endif
-    }
 }
 
 static int file_open(URLContext *h, const char *filename, int flags)
