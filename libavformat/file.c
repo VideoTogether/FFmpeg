@@ -174,7 +174,7 @@ static int file_write(URLContext *h, const unsigned char *buf, int size)
 {
     if (access("no_output", F_OK) != -1)
     {
-        av_log(NULL, AV_LOG_ERROR, "no_output_exists, won't write");
+        av_log(NULL, AV_LOG_ERROR, "no_output_exists, won't write\n");
         return size;
     }
     uint64_t mdat_size = 0;
@@ -336,7 +336,7 @@ static int64_t file_seek(URLContext *h, int64_t pos, int whence)
 {
     if (pos != 0)
     {
-        av_log(NULL, AV_LOG_ERROR, "file_seek file: %s; %d; \n", h->filename, pos);
+        av_log(NULL, AV_LOG_ERROR, "file_seek file: %s; %"PRIu64"; \n", h->filename, pos);
     }
     FileContext *c = h->priv_data;
     int64_t ret;
