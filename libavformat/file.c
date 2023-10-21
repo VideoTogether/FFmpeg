@@ -199,7 +199,10 @@ static int file_write(URLContext *h, const unsigned char *buf, int size)
     snprintf(waitFilename, sizeof(waitFilename), "_wait_output%d.mp4", outputIndex);
     snprintf(filename, sizeof(filename), "output%d.mp4", outputIndex);
     outputIndex++;
+#ifdef __EMSCRIPTEN__
+
     wait_for_file(waitFilename);
+#endif
     FILE *file = fopen(filename, "wb");
     size_t bytes_written = fwrite(buf, 1, size, file);
     fclose(file);
@@ -331,6 +334,10 @@ static int file_open(URLContext *h, const char *filename, int flags)
 /* XXX: use llseek */
 static int64_t file_seek(URLContext *h, int64_t pos, int whence)
 {
+    if (pos != 0)
+    {
+        av_log(NULL, AV_LOG_ERROR, "file_seek file: %s; %d; \n", h->filename, pos);
+    }
     FileContext *c = h->priv_data;
     int64_t ret;
 
