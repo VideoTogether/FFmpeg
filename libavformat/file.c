@@ -172,27 +172,16 @@ void wb32(unsigned char *buf, unsigned int val)
 
 static int file_write(URLContext *h, const unsigned char *buf, int size)
 {
-    if (access("no_output", F_OK) != -1)
-    {
-        av_log(NULL, AV_LOG_ERROR, "no_output_exists, won't write\n");
-        return size;
-    }
-    uint64_t mdat_size = 0;
-    {
-        FILE *file = fopen("_mdat_size.bin", "rb");
-        fread(&mdat_size, sizeof(uint64_t), 1, file);
-        fclose(file);
-    }
-    if (outputIndex == 0)
-    {
-        // TODO bigger than int_max
-        *(unsigned int *)(buf + 40) = (unsigned int)mdat_size;
-        wb32(buf + 40, mdat_size + 8);
-    }
-
     FileContext *c = h->priv_data;
     int ret;
     size = FFMIN(size, c->blocksize);
+    if (access("full_output", F_OK) != -1)
+    {
+        av_log(NULL, AV_LOG_ERROR, "full_output exists, don't chunk\n");
+        ret = write(c->fd, buf, size);
+        ret = size;
+        return (ret == -1) ? AVERROR(errno) : ret;
+    }
 
     char filename[30];
     char waitFilename[30];
@@ -207,11 +196,7 @@ static int file_write(URLContext *h, const unsigned char *buf, int size)
     size_t bytes_written = fwrite(buf, 1, size, file);
     fclose(file);
     av_log(NULL, AV_LOG_ERROR, "Write chunk output file: %s;\n", filename);
-
-
-    // ret = write(c->fd, buf, size);
-    ret = size;
-    return (ret == -1) ? AVERROR(errno) : ret;
+    return size;
 }
 
 static int file_get_handle(URLContext *h)
@@ -322,8 +307,9 @@ static int file_open(URLContext *h, const char *filename, int flags)
 
     /* Buffer writes more than the default 32k to improve throughput especially
      * with networked file systems */
+    /* 10MB buffer to imporve performance in wasm*/
     if (!h->is_streamed && flags & AVIO_FLAG_WRITE)
-        h->min_packet_size = h->max_packet_size = 262144;
+        h->min_packet_size = h->max_packet_size = 10485760;
 
     if (c->seekable >= 0)
         h->is_streamed = !c->seekable;
@@ -334,10 +320,7 @@ static int file_open(URLContext *h, const char *filename, int flags)
 /* XXX: use llseek */
 static int64_t file_seek(URLContext *h, int64_t pos, int whence)
 {
-    if (pos != 0)
-    {
-        av_log(NULL, AV_LOG_ERROR, "file_seek file: %s; %"PRIu64"; \n", h->filename, pos);
-    }
+    av_log(NULL, AV_LOG_ERROR, "file_seek file: %s; %"PRIu64"; \n", h->filename, pos);
     FileContext *c = h->priv_data;
     int64_t ret;
 
